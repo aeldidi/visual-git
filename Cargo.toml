@@ -4,8 +4,8 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-git2 = { version = "0.20.2", default-features = false }
-nanoserde = "0.2.1"
+nanoserde = { version = "0.2.1", default-features = false, features = [
+    "std",
+    "json",
+] }
 notify = "8.2.0"
-tungstenite = { version = "0.28.0", default-features = false, features = ["handshake"] }
-webbrowser = "1.0.6"
