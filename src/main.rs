@@ -12,6 +12,7 @@ use notify::{RecursiveMode, Watcher};
 
 mod git;
 mod http;
+mod ui_assets;
 mod util;
 
 const HTTP_ADDR: &str = "127.0.0.1:8080";
@@ -70,17 +71,6 @@ fn serve_http(
     let path = http::normalize_path(&request.path);
     println!("{} {}", request.method, request.path);
 
-    if request.method == "GET" && path == "/" {
-        let body = include_str!("../index.html");
-        http::write_http_response(
-            &mut stream,
-            "200 OK",
-            "text/html; charset=utf-8",
-            body,
-        )?;
-        return Ok(());
-    }
-
     if request.method == "GET" && path == "/events" {
         return http::serve_sse_client(stream, state);
     }
@@ -129,6 +119,30 @@ fn serve_http(
         .serialize_json();
         http::write_json_response(&mut stream, "200 OK", &resp)?;
         return Ok(());
+    }
+
+    if request.method == "GET" {
+        let asset_path = if path == "/" { "/index.html" } else { path };
+        if let Some(asset_body) = ui_assets::get(asset_path) {
+            let content_type = http::content_type_for_path(asset_path);
+            http::write_http_response_bytes(
+                &mut stream,
+                "200 OK",
+                content_type,
+                asset_body,
+            )?;
+            return Ok(());
+        }
+
+        if path == "/" && !ui_assets::has_assets() {
+            http::write_http_response_bytes(
+                &mut stream,
+                "503 Service Unavailable",
+                "text/html; charset=utf-8",
+                ui_assets::missing_assets_html(),
+            )?;
+            return Ok(());
+        }
     }
 
     http::write_http_response(

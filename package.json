@@ -1,0 +1,11 @@
+{
+  "name": "visual-git-ui",
+  "private": true,
+  "scripts": {
+    "ui:dev": "vite",
+    "ui:build": "vite build"
+  },
+  "devDependencies": {
+    "vite": "^5.4.11"
+  }
+}

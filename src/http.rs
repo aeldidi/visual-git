@@ -97,14 +97,23 @@ pub fn write_http_response(
     content_type: &str,
     body: &str,
 ) -> Result<(), Box<dyn Error>> {
-    let resp = format!(
-        "HTTP/1.1 {}\r\nContent-Type: {}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+    write_http_response_bytes(stream, status, content_type, body.as_bytes())
+}
+
+pub fn write_http_response_bytes(
+    stream: &mut TcpStream,
+    status: &str,
+    content_type: &str,
+    body: &[u8],
+) -> Result<(), Box<dyn Error>> {
+    let headers = format!(
+        "HTTP/1.1 {}\r\nContent-Type: {}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
         status,
         content_type,
         body.len(),
-        body
     );
-    stream.write_all(resp.as_bytes())?;
+    stream.write_all(headers.as_bytes())?;
+    stream.write_all(body)?;
     Ok(())
 }
 
@@ -114,6 +123,30 @@ pub fn write_json_response(
     body: &str,
 ) -> Result<(), Box<dyn Error>> {
     write_http_response(stream, status, "application/json; charset=utf-8", body)
+}
+
+pub fn content_type_for_path(path: &str) -> &'static str {
+    let ext = path
+        .rsplit('.')
+        .next()
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    match ext.as_str() {
+        "html" => "text/html; charset=utf-8",
+        "css" => "text/css; charset=utf-8",
+        "js" | "mjs" => "application/javascript; charset=utf-8",
+        "json" => "application/json; charset=utf-8",
+        "svg" => "image/svg+xml",
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "gif" => "image/gif",
+        "webp" => "image/webp",
+        "ico" => "image/x-icon",
+        "wasm" => "application/wasm",
+        "txt" => "text/plain; charset=utf-8",
+        "map" => "application/json; charset=utf-8",
+        _ => "application/octet-stream",
+    }
 }
 
 pub fn serve_sse_client(
