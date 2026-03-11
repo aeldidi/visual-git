@@ -1,0 +1,11 @@
+[package]
+name = "visual-git"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+git2 = { version = "0.20.2", default-features = false }
+nanoserde = "0.2.1"
+notify = "8.2.0"
+tungstenite = { version = "0.28.0", default-features = false, features = ["handshake"] }
+webbrowser = "1.0.6"

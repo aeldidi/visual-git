@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Visual Git Status</title>
+  <style>
+    body { font-family: sans-serif; max-width: 900px; margin: 2rem auto; padding: 0 1rem; }
+    code { background: #f5f5f5; padding: 0.1rem 0.3rem; }
+    .muted { color: #666; }
+    .ok { color: #0b7a2f; }
+    .warn { color: #9a6b00; }
+    .err { color: #b00020; }
+    table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
+    th, td { text-align: left; border-bottom: 1px solid #ddd; padding: 0.4rem; font-family: monospace; }
+    #empty { margin-top: 1rem; }
+  </style>
+</head>
+<body>
+  <h1>Visual Git Status</h1>
+  <p class="muted">Live status over WebSocket.</p>
+  <p>WebSocket: <code id="ws-url"></code></p>
+
+  <p><strong>Connection:</strong> <span id="connection">connecting...</span></p>
+  <p><strong>Repository:</strong> <code id="repo">-</code></p>
+  <p><strong>Branch:</strong> <code id="branch">-</code></p>
+  <p><strong>Last update:</strong> <span id="updated">-</span></p>
+  <p><strong>Summary:</strong>
+    staged=<span id="staged">0</span>,
+    unstaged=<span id="unstaged">0</span>,
+    untracked=<span id="untracked">0</span>,
+    clean=<span id="clean">-</span>
+  </p>
+
+  <p id="error" class="err"></p>
+  <p id="empty" class="muted">No changes.</p>
+
+  <table id="entries-table">
+    <thead>
+      <tr>
+        <th>Status</th>
+        <th>Path</th>
+      </tr>
+    </thead>
+    <tbody id="entries-body"></tbody>
+  </table>
+
+  <script>
+    const wsUrl = `ws://${location.hostname || "127.0.0.1"}:8081/ws`;
+    document.getElementById("ws-url").textContent = wsUrl;
+
+    const connectionEl = document.getElementById("connection");
+    const repoEl = document.getElementById("repo");
+    const branchEl = document.getElementById("branch");
+    const updatedEl = document.getElementById("updated");
+    const stagedEl = document.getElementById("staged");
+    const unstagedEl = document.getElementById("unstaged");
+    const untrackedEl = document.getElementById("untracked");
+    const cleanEl = document.getElementById("clean");
+    const errorEl = document.getElementById("error");
+    const tableEl = document.getElementById("entries-table");
+    const bodyEl = document.getElementById("entries-body");
+    const emptyEl = document.getElementById("empty");
+
+    let ws = null;
+
+    function setConnection(state, cssClass) {
+      connectionEl.textContent = state;
+      connectionEl.className = cssClass || "";
+    }
+
+    function render(snapshot) {
+      repoEl.textContent = snapshot.repo_path || "-";
+      branchEl.textContent = snapshot.branch || "-";
+      stagedEl.textContent = String(snapshot.staged || 0);
+      unstagedEl.textContent = String(snapshot.unstaged || 0);
+      untrackedEl.textContent = String(snapshot.untracked || 0);
+      cleanEl.textContent = snapshot.clean ? "yes" : "no";
+      cleanEl.className = snapshot.clean ? "ok" : "warn";
+
+      const ms = Number(snapshot.updated_unix_ms || 0);
+      updatedEl.textContent = ms > 0 ? new Date(ms).toLocaleTimeString() : "-";
+
+      errorEl.textContent = snapshot.error || "";
+      bodyEl.textContent = "";
+
+      const entries = Array.isArray(snapshot.entries) ? snapshot.entries : [];
+      if (entries.length === 0) {
+        tableEl.style.display = "none";
+        emptyEl.style.display = "block";
+      } else {
+        tableEl.style.display = "table";
+        emptyEl.style.display = "none";
+        for (const entry of entries) {
+          const tr = document.createElement("tr");
+          const status = document.createElement("td");
+          const path = document.createElement("td");
+          status.textContent = entry.code || "??";
+          path.textContent = entry.path || "<unknown>";
+          tr.appendChild(status);
+          tr.appendChild(path);
+          bodyEl.appendChild(tr);
+        }
+      }
+    }
+
+    function connect() {
+      setConnection("connecting...", "warn");
+      ws = new WebSocket(wsUrl);
+
+      ws.addEventListener("open", () => setConnection("connected", "ok"));
+
+      ws.addEventListener("message", (event) => {
+        try {
+          const snapshot = JSON.parse(event.data);
+          render(snapshot);
+        } catch (err) {
+          errorEl.textContent = `failed to parse status JSON: ${err}`;
+        }
+      });
+
+      ws.addEventListener("error", () => setConnection("error", "err"));
+
+      ws.addEventListener("close", () => {
+        setConnection("disconnected, retrying...", "warn");
+        setTimeout(connect, 1000);
+      });
+    }
+
+    connect();
+  </script>
+</body>
+</html>
