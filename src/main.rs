@@ -12,6 +12,7 @@ use notify::{RecursiveMode, Watcher};
 
 mod git;
 mod http;
+mod router;
 mod ui_assets;
 mod util;
 
@@ -70,6 +71,8 @@ fn serve_http(
     let request = http::read_http_request(&mut stream)?;
     let path = http::normalize_path(&request.path);
     println!("{} {}", request.method, request.path);
+
+    let router = router::new();
 
     if request.method == "GET" && path == "/events" {
         return http::serve_sse_client(stream, state);

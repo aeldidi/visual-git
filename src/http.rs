@@ -1,22 +1,147 @@
 //! Minimal plumbing needed to serve the app over HTTP.
 //! All the app needs to do is differentiate by path and read request bodies.
 use std::{
+    collections::HashMap,
     error::Error,
+    fmt::Display,
     io::{Read, Write},
     net::TcpStream,
     sync::{Arc, atomic::Ordering, mpsc},
     time::Duration,
 };
 
+use nanoserde::SerJson;
+
 use crate::AppState;
 
 const MAX_HEADER_BYTES: usize = 64 * 1024;
 const MAX_BODY_BYTES: usize = 1024 * 1024;
 
-pub struct HttpRequest {
-    pub method: String,
+pub struct Request {
+    pub method: Method,
     pub path: String,
     pub body: Vec<u8>,
+}
+
+/// An HTTP method.
+#[derive(Hash, PartialEq, Eq)]
+pub enum Method {
+    Get,
+    Post,
+}
+
+impl Display for Method {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Method::Get => write!(f, "GET"),
+            Method::Post => write!(f, "POST"),
+        }
+    }
+}
+
+/// an HTTP status code.
+pub struct StatusCode(i16);
+
+impl StatusCode {
+    /// 200 OK
+    /// The request succeeded.
+    pub const OK: StatusCode = StatusCode(200);
+    /// 400 Bad Request
+    /// The server cannot or will not process the request due to something that
+    /// is perceived to be a client error.
+    pub const BAD_REQUEST: StatusCode = StatusCode(400);
+    /// 404 Not Found
+    /// The server cannot find the requested resource.
+    pub const NOT_FOUND: StatusCode = StatusCode(404);
+    /// 500 Internal Server Error
+    /// The server has encountered a situation it does not know how to handle.
+    pub const INTERNAL_SERVER_ERROR: StatusCode = StatusCode(500);
+    /// 405 Method Not Allowed
+    /// The request method is known by the server but is not supported by the
+    /// target resource.
+    pub const METHOD_NOT_ALLOWED: StatusCode = StatusCode(500);
+}
+
+/// A response returned from an HTTP endpoint.
+pub struct Response {
+    status: StatusCode,
+    headers: HashMap<String, String>,
+    body: Option<String>,
+}
+
+impl Response {
+    /// Returns an HTTP response with a given status code, allowing.
+    pub fn builder(status: StatusCode) -> Self {
+        Self {
+            status,
+            headers: HashMap::new(),
+            body: None,
+        }
+    }
+
+    /// Adds a new header to a response.
+    pub fn header(mut self, key: String, value: String) -> Self {
+        self.headers.insert(key, value);
+        self
+    }
+
+    /// Adds a body to the response.
+    pub fn body(self, body: String) -> Self {
+        Self {
+            status: self.status,
+            headers: self.headers,
+            body: Some(body),
+        }
+    }
+}
+
+/// Returns a response which means the server encountered an error.
+pub fn internal_server_error(msg: String) -> Response {
+    Response {
+        status: StatusCode::INTERNAL_SERVER_ERROR,
+        headers: HashMap::new(),
+        body: Some(msg),
+    }
+}
+
+/// Return a JSON response with a 200 response code.
+pub fn json<T: SerJson>(value: T) -> Response {
+    let headers = HashMap::<String, String>::from([(
+        "Content-Type".into(),
+        "application/json".into(),
+    )]);
+    Response {
+        status: StatusCode(200),
+        headers: headers,
+        body: Some(value.serialize_json()),
+    }
+}
+
+/// Returns an ok response (200).
+pub fn ok() -> Response {
+    Response {
+        status: StatusCode::OK,
+        headers: HashMap::new(),
+        body: None,
+    }
+}
+
+/// Returns a "Method Not Allowed" response (405).
+pub fn method_not_allowed() -> Response {
+    Response {
+        status: StatusCode::METHOD_NOT_ALLOWED,
+        headers: HashMap::new(),
+        body: None,
+    }
+}
+
+/// Returns a "Not Found" response (404).
+pub fn not_found() -> Response {
+    Response {
+        status: StatusCode::NOT_FOUND,
+        headers: HashMap::new(),
+        body: None,
+    }
 }
 
 pub fn normalize_path(raw_path: &str) -> &str {
@@ -25,7 +150,7 @@ pub fn normalize_path(raw_path: &str) -> &str {
 
 pub fn read_http_request(
     stream: &mut TcpStream,
-) -> Result<HttpRequest, Box<dyn Error>> {
+) -> Result<Request, Box<dyn Error>> {
     let mut buf = Vec::with_capacity(4096);
     let mut header_end = None;
 
@@ -84,7 +209,7 @@ pub fn read_http_request(
 
     body.truncate(content_length);
 
-    Ok(HttpRequest { method, path, body })
+    Ok(Request { method, path, body })
 }
 
 fn find_header_end(buf: &[u8]) -> Option<usize> {
