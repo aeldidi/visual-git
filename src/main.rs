@@ -7,12 +7,13 @@ use std::sync::{Arc, Mutex, mpsc};
 use std::thread;
 use std::time::Duration;
 
-use nanoserde::{DeJson, SerJson};
+use nanoserde::SerJson;
 use notify::{RecursiveMode, Watcher};
 
 mod git;
 mod http;
 mod router;
+mod routes;
 mod ui_assets;
 mod util;
 
@@ -29,7 +30,7 @@ struct CommandResponse {
 struct AppState {
     repo_path: PathBuf,
     backend: Arc<dyn git::Backend>,
-    current_status_json: Mutex<String>,
+    current_status: Mutex<git::StatusSnapshot>,
     clients: Mutex<Vec<(usize, mpsc::Sender<String>)>>,
     next_client_id: AtomicUsize,
 }
@@ -44,26 +45,6 @@ fn parse_repo_path_from_args() -> Result<PathBuf, Box<dyn Error>> {
     Ok(path.canonicalize().unwrap_or(path))
 }
 
-fn build_status_json(state: &AppState) -> String {
-    state.backend.read_status(&state.repo_path).serialize_json()
-}
-
-fn broadcast_status(state: &AppState, json: &str) {
-    let mut clients = state.clients.lock().unwrap();
-    clients.retain(|(_, tx)| tx.send(json.to_string()).is_ok());
-}
-
-fn refresh_and_broadcast(state: &AppState) {
-    let next_json = build_status_json(state);
-    let mut current = state.current_status_json.lock().unwrap();
-    if *current == next_json {
-        return;
-    }
-    *current = next_json.clone();
-    drop(current);
-    broadcast_status(state, &next_json);
-}
-
 fn serve_http(
     mut stream: TcpStream,
     state: Arc<AppState>,
@@ -72,88 +53,31 @@ fn serve_http(
     let path = http::normalize_path(&request.path);
     println!("{} {}", request.method, request.path);
 
-    let router = router::new();
-
-    if request.method == "GET" && path == "/events" {
+    // Special case this since it constantly streams a response.
+    if request.method == http::Method::Get && path == "/events" {
         return http::serve_sse_client(stream, state);
     }
 
-    if request.method == "POST" && path == "/command" {
-        let body = std::str::from_utf8(&request.body).unwrap_or("");
-        let command = match git::CommandRequest::deserialize_json(body) {
-            Ok(command) => command,
-            Err(err) => {
-                let resp = CommandResponse {
-                    request_id: String::new(),
-                    ok: false,
-                    error: format!("invalid command payload: {}", err),
-                }
-                .serialize_json();
-                http::write_json_response(
-                    &mut stream,
-                    "400 Bad Request",
-                    &resp,
-                )?;
-                return Ok(());
-            }
-        };
+    let router =
+        router::new(state).post("/refresh", routes::refresh::refresh_status);
 
-        if command.request_id.is_empty() {
-            let resp = CommandResponse {
-                request_id: String::new(),
-                ok: false,
-                error: "request_id must not be empty".to_string(),
-            }
-            .serialize_json();
-            http::write_json_response(&mut stream, "400 Bad Request", &resp)?;
-            return Ok(());
-        }
-
-        let result = state.backend.run_command(&state.repo_path, &command);
-        if result.ok && command.kind == "refresh_status" {
-            refresh_and_broadcast(&state);
-        }
-
-        let resp = CommandResponse {
-            request_id: command.request_id,
-            ok: result.ok,
-            error: result.error,
-        }
-        .serialize_json();
-        http::write_json_response(&mut stream, "200 OK", &resp)?;
-        return Ok(());
+    match router.handle(path.to_string(), request) {
+        // TODO: propagate response
+        Ok(resp) => http::write_http_response_bytes(
+            &mut stream,
+            "200 OK",
+            "application/json",
+            &resp.body.unwrap_or(vec![]),
+        )?,
+        // TODO: write error response
+        Err(err) => http::write_http_response_bytes(
+            &mut stream,
+            "500 Internal Server Error",
+            "text/plain; charset=utf8",
+            err,
+        )?,
     }
 
-    if request.method == "GET" {
-        let asset_path = if path == "/" { "/index.html" } else { path };
-        if let Some(asset_body) = ui_assets::get(asset_path) {
-            let content_type = http::content_type_for_path(asset_path);
-            http::write_http_response_bytes(
-                &mut stream,
-                "200 OK",
-                content_type,
-                asset_body,
-            )?;
-            return Ok(());
-        }
-
-        if path == "/" && !ui_assets::has_assets() {
-            http::write_http_response_bytes(
-                &mut stream,
-                "503 Service Unavailable",
-                "text/html; charset=utf-8",
-                ui_assets::missing_assets_html(),
-            )?;
-            return Ok(());
-        }
-    }
-
-    http::write_http_response(
-        &mut stream,
-        "404 Not Found",
-        "text/plain; charset=utf-8",
-        "not found",
-    )?;
     Ok(())
 }
 
@@ -217,7 +141,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let state = Arc::new(AppState {
         repo_path: repo_path.clone(),
         backend,
-        current_status_json: Mutex::new(initial_snapshot.serialize_json()),
+        current_status: Mutex::new(initial_snapshot),
         clients: Mutex::new(Vec::new()),
         next_client_id: AtomicUsize::new(1),
     });

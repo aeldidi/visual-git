@@ -7,13 +7,13 @@ use nanoserde::{DeJson, SerJson};
 
 use crate::util;
 
-#[derive(SerJson, Clone)]
+#[derive(SerJson, Clone, PartialEq, Eq)]
 pub struct StatusEntry {
     pub path: String,
     pub code: String,
 }
 
-#[derive(SerJson, Clone)]
+#[derive(SerJson, Clone, PartialEq, Eq)]
 pub struct StatusSnapshot {
     pub repo_path: String,
     pub branch: String,

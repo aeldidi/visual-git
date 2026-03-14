@@ -6,11 +6,11 @@ export default defineConfig({
     strictPort: true,
     proxy: {
       "/events": "http://127.0.0.1:8080",
-      "/command": "http://127.0.0.1:8080"
-    }
+      "/command": "http://127.0.0.1:8080",
+    },
   },
   build: {
     outDir: "ui-dist",
-    emptyOutDir: true
-  }
+    emptyOutDir: true,
+  },
 });

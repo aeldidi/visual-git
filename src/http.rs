@@ -6,6 +6,7 @@ use std::{
     fmt::Display,
     io::{Read, Write},
     net::TcpStream,
+    str::FromStr,
     sync::{Arc, atomic::Ordering, mpsc},
     time::Duration,
 };
@@ -28,6 +29,18 @@ pub struct Request {
 pub enum Method {
     Get,
     Post,
+}
+
+impl FromStr for Method {
+    type Err = Box<dyn Error>;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "GET" => Ok(Method::Get),
+            "POST" => Ok(Method::Post),
+            _ => Err(format!("unrecognized method: {}", s).into()),
+        }
+    }
 }
 
 impl Display for Method {
@@ -66,7 +79,7 @@ impl StatusCode {
 pub struct Response {
     status: StatusCode,
     headers: HashMap<String, String>,
-    body: Option<String>,
+    pub body: Option<Vec<u8>>,
 }
 
 impl Response {
@@ -86,11 +99,11 @@ impl Response {
     }
 
     /// Adds a body to the response.
-    pub fn body(self, body: String) -> Self {
+    pub fn body(self, body: impl AsRef<[u8]>) -> Self {
         Self {
             status: self.status,
             headers: self.headers,
-            body: Some(body),
+            body: Some(body.as_ref().to_vec()),
         }
     }
 }
@@ -100,7 +113,7 @@ pub fn internal_server_error(msg: String) -> Response {
     Response {
         status: StatusCode::INTERNAL_SERVER_ERROR,
         headers: HashMap::new(),
-        body: Some(msg),
+        body: Some(msg.into()),
     }
 }
 
@@ -113,7 +126,7 @@ pub fn json<T: SerJson>(value: T) -> Response {
     Response {
         status: StatusCode(200),
         headers: headers,
-        body: Some(value.serialize_json()),
+        body: Some(value.serialize_json().into()),
     }
 }
 
@@ -181,7 +194,7 @@ pub fn read_http_request(
 
     let request_line = lines.next().ok_or("missing request line")?;
     let mut parts = request_line.split_whitespace();
-    let method = parts.next().ok_or("missing method")?.to_string();
+    let method = parts.next().ok_or("missing method")?.to_string().parse()?;
     let path = parts.next().ok_or("missing path")?.to_string();
 
     let mut content_length = 0usize;
@@ -250,30 +263,6 @@ pub fn write_json_response(
     write_http_response(stream, status, "application/json; charset=utf-8", body)
 }
 
-pub fn content_type_for_path(path: &str) -> &'static str {
-    let ext = path
-        .rsplit('.')
-        .next()
-        .unwrap_or_default()
-        .to_ascii_lowercase();
-    match ext.as_str() {
-        "html" => "text/html; charset=utf-8",
-        "css" => "text/css; charset=utf-8",
-        "js" | "mjs" => "application/javascript; charset=utf-8",
-        "json" => "application/json; charset=utf-8",
-        "svg" => "image/svg+xml",
-        "png" => "image/png",
-        "jpg" | "jpeg" => "image/jpeg",
-        "gif" => "image/gif",
-        "webp" => "image/webp",
-        "ico" => "image/x-icon",
-        "wasm" => "application/wasm",
-        "txt" => "text/plain; charset=utf-8",
-        "map" => "application/json; charset=utf-8",
-        _ => "application/octet-stream",
-    }
-}
-
 pub fn serve_sse_client(
     mut stream: TcpStream,
     state: Arc<AppState>,
@@ -289,10 +278,12 @@ pub fn serve_sse_client(
     let headers = "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nCache-Control: no-cache\r\nConnection: keep-alive\r\n\r\n";
     stream.write_all(headers.as_bytes())?;
 
-    let initial = state.current_status_json.lock().unwrap().clone();
-    let initial_message = format!("data: {}\n\n", initial);
-    stream.write_all(initial_message.as_bytes())?;
-    stream.flush()?;
+    {
+        let initial = state.current_status.lock().unwrap().clone();
+        let initial_message = format!("data: {}\n\n", initial.serialize_json());
+        stream.write_all(initial_message.as_bytes())?;
+        stream.flush()?;
+    }
 
     loop {
         match rx.recv_timeout(Duration::from_secs(15)) {
