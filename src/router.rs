@@ -1,16 +1,16 @@
 //! An extremely simple HTTP router.
 
-use std::{collections::HashMap, error::Error, sync::Arc};
+use std::{collections::HashMap, sync::Arc};
 
-use crate::{AppState, http, ui_assets};
+use crate::{AppState, dynerror, http, ui_assets};
 
-struct Router {
+pub struct Router {
     state: Arc<AppState>,
     routes: HashMap<String, Route>,
 }
 
 type HandlerFn =
-    fn(http::Request, Arc<AppState>) -> Result<http::Response, Box<dyn Error>>;
+    fn(http::Request, Arc<AppState>) -> dynerror::Result<http::Response>;
 
 pub struct Route {
     method: HashMap<http::Method, HandlerFn>,
@@ -69,7 +69,7 @@ impl Router {
         &self,
         path: String,
         req: http::Request,
-    ) -> Result<http::Response, Box<dyn Error>> {
+    ) -> dynerror::Result<http::Response> {
         match self.routes.get(&path) {
             Some(route) => match route.method.get(&req.method) {
                 Some(handle) => handle(req, self.state.clone()),

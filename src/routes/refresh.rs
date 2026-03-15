@@ -1,13 +1,13 @@
-use std::{error::Error, sync::Arc};
+use std::sync::Arc;
 
 use nanoserde::SerJson;
 
-use crate::{AppState, http};
+use crate::{AppState, dynerror, http};
 
 pub fn refresh_status(
     _req: http::Request,
     state: Arc<AppState>,
-) -> Result<http::Response, Box<dyn Error>> {
+) -> dynerror::Result<http::Response> {
     let status = state.backend.read_status(&state.repo_path);
     {
         let mut current = state.current_status.lock().unwrap();
