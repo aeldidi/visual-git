@@ -3,7 +3,7 @@
 
 use std::{path::Path, process::Command};
 
-use nanoserde::{DeJson, SerJson};
+use nanoserde::SerJson;
 
 use crate::util;
 
@@ -26,26 +26,8 @@ pub struct StatusSnapshot {
     pub entries: Vec<StatusEntry>,
 }
 
-#[derive(DeJson, Clone)]
-pub struct CommandRequest {
-    pub request_id: String,
-    pub kind: String,
-    #[nserde(default)]
-    pub payload: Option<String>,
-}
-
-pub struct CommandResult {
-    pub ok: bool,
-    pub error: String,
-}
-
 pub trait Backend: Send + Sync {
     fn read_status(&self, repo_path: &Path) -> StatusSnapshot;
-    fn run_command(
-        &self,
-        repo_path: &Path,
-        cmd: &CommandRequest,
-    ) -> CommandResult;
 }
 
 pub struct CliBackend;
@@ -102,25 +84,6 @@ impl Backend for CliBackend {
                 error,
                 entries: Vec::new(),
             },
-        }
-    }
-
-    fn run_command(
-        &self,
-        _repo_path: &Path,
-        cmd: &CommandRequest,
-    ) -> CommandResult {
-        let _ = &cmd.payload;
-        if cmd.kind == "refresh_status" {
-            return CommandResult {
-                ok: true,
-                error: String::new(),
-            };
-        }
-
-        CommandResult {
-            ok: false,
-            error: format!("not_implemented: {}", cmd.kind),
         }
     }
 }
