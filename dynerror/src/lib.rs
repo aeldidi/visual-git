@@ -243,10 +243,10 @@ impl<T, E: std::error::Error + 'static> Context<T>
 
 #[macro_export]
 macro_rules! bail {
-    ($($tts:tt)*) => {return Err(crate::dynerror::Error::new(format!($($tts)*)))};
+    ($($tts:tt)*) => {return Err(::dynerror::Error::new(format!($($tts)*)))};
 }
 
 #[macro_export]
 macro_rules! err {
-    ($($tts:tt)*) => {crate::dynerror::Error::new(format!($($tts)*))};
+    ($($tts:tt)*) => {::dynerror::Error::new(format!($($tts)*))};
 }

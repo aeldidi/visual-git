@@ -12,12 +12,12 @@ fn main() {
     let generated_path = out_dir.join("embedded_assets.rs");
     let profile = env::var("PROFILE").unwrap_or_default();
 
-    let ui_dist = PathBuf::from("ui-dist");
+    let ui_dist = PathBuf::from("..").join("ui").join("dist");
     let mut assets = Vec::<(String, String)>::new();
 
     if ui_dist.is_dir() {
         collect_assets(&ui_dist, &ui_dist, &mut assets)
-            .expect("failed to walk ui-dist");
+            .expect("failed to walk ui/dist");
         assets.sort_by(|a, b| a.0.cmp(&b.0));
     }
 
@@ -25,7 +25,7 @@ fn main() {
         assets.iter().any(|(web_path, _)| web_path == "/index.html");
     if profile == "release" && !has_index {
         panic!(
-            "release build requires frontend assets in ui-dist/index.html; run `npm run ui:build` before `cargo build --release`"
+            "release build requires frontend assets in ui/dist/index.html; run `npm run ui:build` before `cargo build --release`"
         );
     }
 

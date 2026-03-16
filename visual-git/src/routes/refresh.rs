@@ -1,8 +1,9 @@
 use std::sync::Arc;
 
+use dynerror;
 use nanoserde::SerJson;
 
-use crate::{AppState, dynerror, http};
+use crate::{AppState, http};
 
 pub fn refresh_status(
     _req: http::Request,
@@ -21,5 +22,5 @@ pub fn refresh_status(
         let json = status.serialize_json();
         clients.retain(|(_, tx)| tx.send(json.clone()).is_ok());
     }
-    Ok(http::json(status))
+    Ok(http::ok())
 }

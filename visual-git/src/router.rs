@@ -2,7 +2,9 @@
 
 use std::{collections::HashMap, sync::Arc};
 
-use crate::{AppState, dynerror, http, ui_assets};
+use dynerror;
+
+use crate::{AppState, http, ui_assets};
 
 pub struct Router {
     state: Arc<AppState>,

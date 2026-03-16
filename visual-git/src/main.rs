@@ -6,12 +6,10 @@ use std::sync::{Arc, Mutex, mpsc};
 use std::thread;
 use std::time::Duration;
 
+use dynerror::{Context, bail, err};
 use nanoserde::SerJson;
 use notify::{RecursiveMode, Watcher};
 
-use crate::dynerror::Context;
-
-mod dynerror;
 mod git;
 mod http;
 mod router;
@@ -131,11 +129,11 @@ fn run_repo_watcher(
                 }
             }
             Ok(Err(err)) => eprintln!("watch error: {}", err),
-            Err(_) => break,
+            Err(err) => {
+                eprintln!("error retrieving from filesystem watcher: {}", err)
+            }
         }
     }
-
-    Ok(())
 }
 
 fn main() -> dynerror::Result<()> {

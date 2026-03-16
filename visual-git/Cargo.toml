@@ -1,0 +1,12 @@
+[package]
+name = "visual-git"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+nanoserde = { version = "0.2.1", default-features = false, features = [
+    "std",
+    "json",
+] }
+notify = "8.2.0"
+dynerror = { path = "../dynerror" }
